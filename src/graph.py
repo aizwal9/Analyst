@@ -44,7 +44,7 @@ if __name__ == "__main__":
     from langchain_core.messages import HumanMessage
 
     config = {"configurable" : {"thread_id" : "demo_thread_1"}}
-    user_query = "Find the top 5 customers by spend and draft a thank you email for them."
+    user_query = "Find the top 5 customers by spend, generate a chart for this and draft a thank you email for them."
 
     print("🚀 Starting Graph...")
 

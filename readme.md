@@ -1,4 +1,4 @@
-# Text-to-Action Analyst API
+# Text-to-Action Analyst
 
 A powerful AI-driven data analyst agent built with **FastAPI**, **LangChain**, and **LangGraph**. This application translates natural language queries into SQL, executes them against a PostgreSQL database (Olist E-commerce dataset), generates visualization specifications, and drafts actionable emails—all with a human-in-the-loop approval workflow.
 

@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from langchain_core.messages import HumanMessage
 from langgraph_sdk.auth.exceptions import HTTPException
 from pydantic import BaseModel
+
+from src.db_history import ensure_session, save_message, get_all_sessions, get_session_history
 from src.graph import app
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -30,6 +32,8 @@ async def chat(request: ChatRequest):
     """
 
     config = {"configurable" : {"thread_id" : request.thread_id}}
+    ensure_session(request.thread_id, title=f"Analysis: {request.message[:20]}...")
+    save_message(request.thread_id, "user", request.message)
 
     inputs = {"messages" : [HumanMessage(content=request.message)]}
 
@@ -40,7 +44,6 @@ async def chat(request: ChatRequest):
         snapshot = app.get_state(config)
 
         response = {
-            "status" : "completed",
             "sql_query" : snapshot.values.get("sql_query"),
             "visualization_spec" : snapshot.values.get("visualization_spec"),
             "email_draft" : snapshot.values.get("email_draft"),
@@ -48,10 +51,15 @@ async def chat(request: ChatRequest):
             "next_step" : snapshot.next if snapshot.next else None
         }
 
-        if snapshot.next:
-            response["status"] = "paused"
+        ai_content = "I've analyzed the data for you." if response["sql_query"] else "I processed your request."
+        save_message(request.thread_id, "assistant", ai_content, response)
 
-        return response
+        final_response = {
+            "status" : "paused" if snapshot.next else "completed",
+            **response
+        }
+
+        return final_response
 
     except Exception as ex:
         raise HTTPException(status_code=500,detail=str(ex))
@@ -75,6 +83,26 @@ async def approve(request: ApprovalRequest):
             "message" : "Email sent successfully"
         }
 
+    except Exception as ex:
+        raise HTTPException(status_code=500,detail=str(ex))
+
+@server.get("/history")
+async def get_history_endpoint():
+    """
+    Fetched list of all chat sessions.
+    """
+    try:
+        return get_all_sessions()
+    except Exception as ex:
+        raise HTTPException(status_code=500,detail=str(ex))
+
+@server.get("/history/{thread_id}")
+async def get_history_endpoint(thread_id: str):
+    """
+    Fetches full message history for a specific thread.
+    """
+    try:
+        return get_session_history(thread_id)
     except Exception as ex:
         raise HTTPException(status_code=500,detail=str(ex))
 

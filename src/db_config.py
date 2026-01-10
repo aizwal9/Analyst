@@ -1,4 +1,6 @@
 import os
+
+import psycopg2
 from langchain_community.utilities import SQLDatabase
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
@@ -45,6 +47,9 @@ def get_schema_info():
     """
     db = get_database()
     return db.get_table_info()
+
+def get_db_connection():
+    return psycopg2.connect(os.getenv("DATABASE_URL"))
 
 
 if __name__ == "__main__":

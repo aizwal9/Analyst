@@ -5,6 +5,9 @@ from src.nodes import sql_analyst_node, chart_generator_node, marketing_agent_no
 from dotenv import load_dotenv
 load_dotenv()
 
+# Constants
+MAX_RETRIES = 3
+
 workflow = StateGraph(AgentState)
 
 workflow.add_node("sql_analyst", sql_analyst_node)
@@ -14,17 +17,40 @@ workflow.add_node("send_email",send_mail_node)
 
 workflow.set_entry_point("sql_analyst")
 workflow.add_edge("sql_analyst", "chart_generator")
-workflow.add_edge("chart_generator","marketing_agent")
 
+# --- Conditional Logic for SQL Self Healing ---
+def should_continue_or_retry(state : AgentState):
+    """
+    Decides whether to retry SQL generation or move to charting.
+    """
+    if state.get("error"):
+        if state.get("retry_count",0) < MAX_RETRIES:
+            return "retry"
+        else:
+            return "give_up"
+    return "continue"
 
-def should_continue(state: AgentState):
+workflow.add_conditional_edges(
+    "sql_analyst",
+    should_continue_or_retry,
+    {
+        "retry": "sql_analyst",
+        "continue" : "chart_generator",
+        "give_up" : END
+    }
+)
+
+workflow.add_edge("chart_generator", "marketing_agent")
+
+# --- Conditional Logic for Approval ---
+def should_email(state: AgentState):
     if state.get("needs_approval"):
         return "send_email"
     return END
 
 workflow.add_conditional_edges(
     "marketing_agent",
-    should_continue,
+    should_email,
     {
         "send_email" : "send_email",
         END : END

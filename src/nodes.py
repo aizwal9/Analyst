@@ -30,50 +30,99 @@ def sql_analyst_node(state: AgentState):
     5. Returns data to the state.
     """
     print("--- SQL ANALYST NODE ---")
+    messages = state['messages']
+    user_question = messages[-1].content
 
-    user_question = state['messages'][-1].content
+    db = get_database()
     schema = get_schema_info()
 
-    template = """
-    You are an expert PostgreSQL Data Analyst.
-    Your task is to generate a syntactically correct PostgreSQL query to answer the user's question.
+    error = state.get("error")
+    retries = state.get("retry_count", 0)
 
-    Use the following database schema:
-    {schema}
+    if error:
+        print(f"⚠️ Attempting to fix SQL error (Attempt {retries + 1})...")
+        system_prompt = """
+                You are a PostgreSQL expert. The previous query you generated failed with an error.
 
-    Guidelines:
-    1. Return ONLY the SQL query. No markdown formatting (```sql), no explanations.
-    2. Use the `customers`, `orders`, `order_items`, `products`, and `order_payments` tables.
-    3. When checking dates, assume the current date is 2018-10-17 (The Olist dataset ends around 2018).
-    4. Cast monetary values to numeric/float if needed for aggregation.
-    """
+                Database Schema:
+                {schema}
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", template),
-        ("human", "{question}")
-    ])
+                Previous Query: {previous_query}
+                Error Message: {error}
 
-    sql_generator_chain = prompt | llm | StrOutputParser()
+                Task:
+                Fix the SQL query to resolve the error. Return ONLY the corrected SQL.
+                """
+        # We use the query from the state that failed
+        previous_query = state.get("sql_query", "")
 
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt)
+        ])
+        chain = prompt | llm | StrOutputParser()
+        generated_sql = chain.invoke({
+            "schema": schema,
+            "previous_query": previous_query,
+            "error": error
+        })
+
+    else :
+        print("🧠 Generating new SQL query...")
+        template = """
+        You are an expert PostgreSQL Data Analyst.
+        Your task is to generate a syntactically correct PostgreSQL query to answer the user's question.
+    
+        Use the following database schema:
+        {schema}
+        
+        Context Awareness:
+        - Look at the chat history below to understand pronouns (e.g., "them", "it") or follow-up filters.
+        - If the user asks to "filter" or "drill down", modify the logic of the previous query.
+    
+        Guidelines:
+        1. Return ONLY the SQL query. No markdown formatting (```sql), no explanations.
+        2. Use the `customers`, `orders`, `order_items`, `products`, and `order_payments` tables.
+        3. When checking dates, assume the current date is 2018-10-17 (The Olist dataset ends around 2018).
+        4. Cast monetary values to numeric/float if needed for aggregation.
+        """
+
+        chat_history_str = "\n".join([f"{msg.type}: {msg.content}" for msg in messages[:-1]])
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", template),
+            ("system", f"Chat History:\n{chat_history_str}"),
+            ("human", "{question}")
+        ])
+
+        chain = prompt | llm | StrOutputParser()
+        generated_sql = chain.invoke({"schema": schema, "question": user_question})
+
+    clean_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
+    print(f"Generated SQL: {clean_sql}")
     try:
-        generated_sql = sql_generator_chain.invoke({"schema": schema, "question": user_question})
-        clean_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
-        print(f"Generated SQL: {clean_sql}")
-
-        db = get_database()
         result = db.run(clean_sql)
+
+        if "Error:" in str(result) or "exception" in str(result).lower():
+            raise Exception(str(result))
 
         print(f"Query Result: {result}")
 
         return {
             "sql_query": clean_sql,
-            "query_result": result
+            "query_result": result,
+            "error" : None,
+            "retry_count" : 0
         }
 
     except Exception as e:
+        error_msg = str(e)
+        print(f"❌ SQL Execution Failed: {error_msg}")
+
         return {
-            "sql_query": "ERROR",
-            "query_result": f"Error executing query: {str(e)}"
+            "sql_query": clean_sql,
+            "query_result": None,
+            "error": error_msg,
+            "retry_count": retries + 1
         }
 
 def chart_generator_node(state: AgentState):

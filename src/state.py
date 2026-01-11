@@ -14,11 +14,10 @@ class AgentState(TypedDict):
     sql_query: Optional[str]  # The generated SQL
     query_result: Optional[Any]  # The raw data returned from the DB (List of dicts or string)
 
-    # 2. Chart Agent Outputs
-    visualization_spec: Optional[Dict]  # Chart.js or Recharts configuration
+    error: Optional[str]  # Stores the DB error message if any
+    retry_count: int  # Tracks how many times we've tried to fix it
 
-    # 3. Marketing Agent Outputs
-    email_draft: Optional[str]  # The generated email text
-
-    # Control Flags
-    needs_approval: bool  # If True, pause before sending email
+    # Chart & Marketing Outputs
+    visualization_spec: Optional[Dict]
+    email_draft: Optional[str]
+    needs_approval: bool
